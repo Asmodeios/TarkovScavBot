@@ -11,8 +11,20 @@ const findPlayer = async (name, collection) => {
   return response;
 }
 
+const createNewPlayer = async (collection, ...data) => {
+  const response = await collection.insertOne(data);
+}
+
+const updatePlayer = async (query, data, collection) => {
+  const response = await collection.updateOne(query, {
+    $set: data,
+  })
+}
+
 module.exports = {
   clearPlayersInMap,
   deployInMap,
   findPlayer,
+  updatePlayer,
+  createNewPlayer,
 }
