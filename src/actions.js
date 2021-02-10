@@ -7,21 +7,36 @@ const {
 } = require('../utils/Player');
 const {
   numberWithCommas: formatNumber,
-  formatSeconds,
 } = require('../utils/formatNumber');
+const fetch = require('cross-fetch');
+const isEmpty = require('lodash/isEmpty');
 
-const changeMap = async (db, channels, maps, currentMap) => {
+const ripMessage = () => {
+  const messages = [
+    'buckshot scav (Head,eyes)',
+    'Huya/douyu chineese gamer',
+    'TTV gamer',
+    'super chad gamer',
+    'got ratted on',
+    'check your corners',
+    'exfil camper',
+  ]
+  return messages[Math.floor(Math.random() * Math.floor(messages.length))]
+};
+
+const changeMap = async (db, channels, maps, currentMap, send) => {
   const playersInMap = db.collection('playersInMap')
   await clearPlayersInMap(playersInMap);
-  if (currentMap >= maps.length) {
+  if (currentMap >= maps.length - 1) {
     currentMap = 0;
   } else {
     currentMap++;
   }
   let map = maps[currentMap];
   channels.forEach((channel) => {
-    send(`Map has been changed. Current map: ${map.name}.${map.entry ? ' Entry cost: ' + formatNumber(map.entry) + ' RUB' : ''}`, channel);
+    send(`Map has been changed. Current map: ${map.name}.${map.entry ? ' Entry cost: ' + formatNumber(map.entry) + ' ₽' : ''}`, channel);
   })
+  return currentMap;
 };
 
 const listTop5 = async (db) => {
@@ -29,7 +44,7 @@ const listTop5 = async (db) => {
   const top5 = await playersCollection.find({ }, { name: 1, stonks: 1}).sort({ stonks: -1 }).limit(5).toArray();
   let result = '';
   top5.forEach((player, index) => {
-    result += `| ${index + 1} -> ${player.name}: ${formatNumber(player.stonks)} RUB `
+    result += `| ${index + 1} -> ${player.name}: ${formatNumber(player.stonks)} ₽ `
   });
   return result
 }
@@ -42,16 +57,10 @@ const gamble = async (db, user, value) => {
   const isConstant = /^\d+$/.exec(value);
   const playerStonks = player?.stonks;
   const isWin = Math.random() >= 0.5;
-  if (!player) {
-    await createNewPlayer(playersCollection, name);
-    return;
-  }
   let reward = 0;
-  if (name.toLowerCase() === 'aynzz') {
-    return 'Stop gambling you doombass';
-  }
+
   if (!playerStonks || playerStonks < 10000) {
-    return `${name} minimum entry for ScavCasino is 10000RUB.`;
+    return `${name} minimum entry for ScavCasino is 10000₽.`;
   }
   if (value === 'all') {
     reward = isWin ? playerStonks * 2 : 0;
@@ -59,7 +68,7 @@ const gamble = async (db, user, value) => {
       stonks: reward,
     }, playersCollection)
     
-    return `${isWin ? `${name} won ${formatNumber(reward)} RUB and now has ${formatNumber(reward)}` : `${name} lost all his money`}`;
+    return `${isWin ? `${name} won ${formatNumber(reward)} ₽ and now has ${formatNumber(reward)}` : `${name} lost all his money`}`;
   } else if (isPercentage) {
     const percentage = +isPercentage[1] / 100;
     reward = isWin ? Math.round(playerStonks * percentage) : -Math.round(playerStonks * percentage);
@@ -75,7 +84,7 @@ const gamble = async (db, user, value) => {
   }, playersCollection)
   
 
-  return `${name} ${isWin ? 'won' : 'lost'} ${formatNumber(Math.abs(reward))} RUB and now has ${formatNumber(totalStonks)} RUB`
+  return `${name} ${isWin ? 'won' : 'lost'} ${formatNumber(Math.abs(reward))} ₽ and now has ${formatNumber(totalStonks)} ₽`
 
 }
 
@@ -87,41 +96,39 @@ const play = async (db, user, maps, currentMap) => {
   const current = maps[currentMap];
   const reward = Math.round(Math.random() * (current.max - current.min) + current.min) - current.entry;
   const isInMap = await playersInMap.findOne({ name },);
+  const survived = Math.random() >= 0.33;
   console.log('player', player);
   let totalStonks = 0
   if ((player?.stonks || 0 ) < current.entry) {
     return `${name}, you are to poor to deploy on ${current.name}. Maybe get some stonks before`
   }
-
-  if (player) {
-    
-    if(isInMap) {
-      return `${name}, you already raided this map, you have to wait for the map to change.`
-    } else {
-      totalStonks = player.stonks + reward;
-      await updatePlayer({ name }, { stonks: totalStonks }, playersCollection);
-    }
-  } else {
-    totalStonks = (player?.stonks || 0) + reward;
-    await createNewPlayer(playersCollection,{
-      name,
-      stonks: totalStonks,
-    })
+  if(isInMap) {
+    return `${name}, you already raided this map, you have to wait for the map to change.`
   }
+
+  totalStonks = survived ? player.stonks + reward : player.stonks;
+  await updatePlayer({ name }, { 
+    stonks: totalStonks,
+    raids: (player?.raids || 0) + 1,
+    survived: (player?.survived || 0) + (+survived),
+  }, playersCollection);
+  
   await deployInMap(name, playersInMap);
 
-  return `${user['display-name']} escaped from ${maps[currentMap].name} with ${formatNumber(reward)} RUB and now has ${formatNumber(totalStonks)}`;
+  if (!survived) {
+    return `${name}, didn't escape from ${maps[currentMap].name}. Reason: ${ripMessage()}.`
+  }
+
+  return `${name} escaped from ${maps[currentMap].name} with ${formatNumber(reward)} ₽ and now has ${formatNumber(totalStonks)}`;
 }
 
-const checkStonks = async (db, user) => {
+const stats = async (db, user) => {
   const { 'display-name': name  } = user;
   const playersCollection = db.collection('players')
   const player = await playersCollection.findOne({ name },);
-  if (!player) {
-    createNewPlayer(playersCollection, { name, stonks: 0 });
-    return `${name}, you have ${0} RUB.`
-  }
-  return `${name}, you have ${formatNumber(player.stonks)} RUB.`
+
+  return `${name}, you have ${formatNumber(player.stonks)} ₽. 
+  You have raided ${player.raids} times with ${((player.survived / player.raids) * 100).toFixed(2)}% survival rate.`
 }
 
 const fetchMaps = async (db) => {
@@ -129,12 +136,36 @@ const fetchMaps = async (db) => {
   return maps
 }
 
+const search = async (name) => {
+  let data = null;
+  if (isEmpty(name)) {
+    return 'Provide correct item name e.g. !search Slick';
+  }
+  try {
+    const response = await fetch(`https://tarkov-market.com/api/items?lang=en&search=${name}&tag=&sort=change24&sort_direction=desc&skip=0&limit=1`);
+
+    if (response.status >= 400) {
+      throw new Error('Bad response');
+    }
+
+    data = await response.json();
+    console.log(data);
+  } catch (err) {
+    console.error(err);
+  }
+  const item = data?.items[0];
+  if (!item) {
+    return `Item "${name}" was not found.`
+  }
+  return item;
+}
 
 module.exports = {
   play,
   gamble,
   changeMap,
   listTop5,
-  checkStonks,
-  fetchMaps
+  stats,
+  fetchMaps,
+  search,
 }

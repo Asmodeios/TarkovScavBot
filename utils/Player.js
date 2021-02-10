@@ -11,12 +11,17 @@ const findPlayer = async (name, collection) => {
   return response;
 }
 
-const createNewPlayer = async (collection, ...data) => {
-  const response = await collection.insertOne(data);
+const createNewPlayer = async (collection, name) => {
+  await collection.insertOne({ 
+    name,
+    stonks: 0,
+    raids: 0,
+    survived: 0,
+  });
 }
 
 const updatePlayer = async (query, data, collection) => {
-  const response = await collection.updateOne(query, {
+  await collection.updateOne(query, {
     $set: data,
   })
 }

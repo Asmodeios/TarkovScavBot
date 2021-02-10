@@ -8,18 +8,14 @@ const executeFunc = (queue) => {
 
 const timedQueue = function(defaultWait) {
   var queue = [];
-  var interval = setInterval(() => {
-    executeFunc(queue);
-  }, defaultWait);
   return {
-    queue: () => { return queue },
-    push: (func) => { queue.push(func) },
-    setWait: (wait) => {
-      clearInterval(interval);
-      setInterval(() => {
+    getQueue: () => { return queue },
+    push: (func) => { 
+      setTimeout(() => {
         executeFunc(queue);
-      }, wait);
-    }
+      }, defaultWait)
+      queue.push(func) 
+    },
   }
 };
 
